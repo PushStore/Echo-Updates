@@ -1,0 +1,59 @@
+name: Release APK on Version Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'update.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from update.json
+        id: version
+        run: |
+          VERSION=$(python3 -c "
+          import json
+          with open('update.json') as f:
+              d = json.load(f)
+          print(f'v{d[\"VersionName\"]}')
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version detected: $VERSION"
+
+      - name: Check if release already exists
+        id: check
+        run: |
+          if gh release view "${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.version.outputs.version }} already exists, skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.version.outputs.version }} does not exist, creating."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          gh release create "${{ steps.version.outputs.version }}" \
+            --title "Echo ${{ steps.version.outputs.version }}" \
+            --notes "Auto-generated release for Echo ${{ steps.version.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload update.json as release asset
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          gh release upload "${{ steps.version.outputs.version }}" update.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
